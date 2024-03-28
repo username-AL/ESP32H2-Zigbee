@@ -14,7 +14,7 @@ void reportAttribute(uint8_t endpoint, uint16_t clusterID, uint16_t attributeID,
 {
     esp_zb_zcl_report_attr_cmd_t cmd = {
         .zcl_basic_cmd = {
-            .dst_addr_u.addr_short = 0x0000,
+            .dst_addr_u.addr_short = 0x0001,
             .dst_endpoint = endpoint,
             .src_endpoint = endpoint,
         },
@@ -48,15 +48,17 @@ void dht22_task(void *pvParameters)
     {
         setDHTgpio(GPIO_NUM_8);
         int ret = readDHT();
-        if (ret != DHT_OK)
-            errorHandler(ret);
+        if (ret != DHT_OK){
+         //   errorHandler(ret);   
+        }
+         
         else
         {
-            ESP_LOGI(TAG, "Hum: %.1f Tmp: %.1f", getHumidity(), getTemperature());
-            uint16_t temperature = (uint16_t)(getTemperature() * 100);
-            uint16_t humidity = (uint16_t)(getHumidity() * 100);
-            reportAttribute(HA_ESP_LIGHT_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, &temperature, 2);
-            reportAttribute(HA_ESP_LIGHT_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, &humidity, 2);
+            // ESP_LOGI(TAG, "Hum: %.1f Tmp: %.1f", getHumidity(), getTemperature());
+            // uint16_t temperature = (uint16_t)(getTemperature() * 100);
+            // uint16_t humidity = (uint16_t)(getHumidity() * 100);
+            // reportAttribute(HA_ESP_LIGHT_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, &temperature, 2);
+            // reportAttribute(HA_ESP_LIGHT_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, &humidity, 2);
         }
         vTaskDelay(5000 / portTICK_PERIOD_MS);
     }
@@ -76,6 +78,8 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
                         message->info.status);
     ESP_LOGI(TAG, "Received message: endpoint(0x%x), cluster(0x%x), attribute(0x%x), data size(%d)", message->info.dst_endpoint, message->info.cluster,
              message->attribute.id, message->attribute.data.size);
+
+
     if (message->info.dst_endpoint == HA_ESP_LIGHT_ENDPOINT)
     {
         if (message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_ON_OFF)
@@ -83,7 +87,7 @@ static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t 
             if (message->attribute.id == ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID && message->attribute.data.type == ESP_ZB_ZCL_ATTR_TYPE_BOOL)
             {
                 light_state = message->attribute.data.value ? *(bool *)message->attribute.data.value : light_state;
-                gpio_set_level(GPIO_NUM_0, light_state);
+                gpio_set_level(GPIO_NUM_5, light_state);
                 ESP_LOGI(TAG, "Light sets to %s", light_state ? "On" : "Off");
             }
         }
@@ -169,9 +173,9 @@ static void esp_zb_task(void *pvParameters)
     uint32_t ApplicationVersion = 0x0001;
     uint32_t StackVersion = 0x0002;
     uint32_t HWVersion = 0x0002;
-    uint8_t ManufacturerName[] = {14, 'G', 'a', 'm', 'm', 'a', 'T', 'r', 'o', 'n', 'i', 'q', 'u', 'e', 's'}; // warning: this is in format {length, 'string'} :
-    uint8_t ModelIdentifier[] = {4, 'D', 'e', 'm', 'o'};
-    uint8_t DateCode[] = {8, '2', '0', '2', '3', '0', '8', '2', '6'};
+    uint8_t ManufacturerName[] = {8, 'D', 'i', 'k', 'a', 'H', 'o', 'm', 'e'}; // warning: this is in format {length, 'string'} :
+    uint8_t ModelIdentifier[] = {5, 'A', 'L', 'a', 'm', 'p'};
+    uint8_t DateCode[] = {8, '2', '0', '2', '4', '0', '8', '2', '6'};
     esp_zb_attribute_list_t *esp_zb_basic_cluster = esp_zb_basic_cluster_create(&basic_cluster_cfg);
     esp_zb_basic_cluster_add_attr(esp_zb_basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_APPLICATION_VERSION_ID, &ApplicationVersion);
     esp_zb_basic_cluster_add_attr(esp_zb_basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_STACK_VERSION_ID, &StackVersion);
@@ -192,6 +196,32 @@ static void esp_zb_task(void *pvParameters)
     };
     esp_zb_attribute_list_t *esp_zb_on_off_cluster = esp_zb_on_off_cluster_create(&on_off_cfg);
 
+    // ===============================Color Cluster for test==============================
+    // It works with HA!!!
+    // Use esp_zb_color_control_cluster_add_attr for this
+    //esp_zb_color_control_cluster_create
+    esp_zb_color_cluster_cfg_t esp_zb_color_cluster_cfg = { 
+        .current_x = ESP_ZB_ZCL_COLOR_CONTROL_CURRENT_X_DEF_VALUE,                          /*!<  The current value of the normalized chromaticity value x */
+        .current_y = ESP_ZB_ZCL_COLOR_CONTROL_CURRENT_Y_DEF_VALUE,                          /*!<  The current value of the normalized chromaticity value y */ 
+        .color_mode = 0x0002,                                                               /*!<  The mode which attribute determines the color of the device */ 
+        .options = ESP_ZB_ZCL_COLOR_CONTROL_OPTIONS_DEFAULT_VALUE,                          /*!<  The bitmap determines behavior of some cluster commands */ 
+        .enhanced_color_mode = ESP_ZB_ZCL_COLOR_CONTROL_ENHANCED_COLOR_MODE_DEFAULT_VALUE,  /*!<  The enhanced-mode which attribute determines the color of the device */ 
+        .color_capabilities = 0x0010,                                                       /*!<  Specifying the color capabilities of the device support the color control cluster */ 
+    };
+    esp_zb_attribute_list_t *esp_zb_color_cluster = esp_zb_color_control_cluster_create(&esp_zb_color_cluster_cfg);
+    
+    uint16_t color_attr = ESP_ZB_ZCL_COLOR_CONTROL_COLOR_TEMPERATURE_DEF_VALUE;
+    uint16_t min_temp = ESP_ZB_ZCL_COLOR_CONTROL_COLOR_TEMP_PHYSICAL_MIN_MIREDS_DEFAULT_VALUE;
+    uint16_t max_temp = ESP_ZB_ZCL_COLOR_CONTROL_COLOR_TEMP_PHYSICAL_MAX_MIREDS_DEFAULT_VALUE;
+    esp_zb_color_control_cluster_add_attr(esp_zb_color_cluster, ESP_ZB_ZCL_ATTR_COLOR_CONTROL_COLOR_TEMPERATURE_ID, &color_attr);
+    esp_zb_color_control_cluster_add_attr(esp_zb_color_cluster, ESP_ZB_ZCL_ATTR_COLOR_CONTROL_COLOR_TEMP_PHYSICAL_MIN_MIREDS_ID, &min_temp);
+    esp_zb_color_control_cluster_add_attr(esp_zb_color_cluster, ESP_ZB_ZCL_ATTR_COLOR_CONTROL_COLOR_TEMP_PHYSICAL_MAX_MIREDS_ID, &max_temp);
+    
+    // ============================= Level Cluster for test =============================
+    esp_zb_attribute_list_t *esp_zb_level_cluster = esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL);
+    uint16_t level = 50;
+    esp_zb_level_cluster_add_attr(esp_zb_level_cluster, ESP_ZB_ZCL_ATTR_LEVEL_CONTROL_CURRENT_LEVEL_ID, &level);
+    
     // ------------------------------ Cluster BINARY INPUT ------------------------------
     esp_zb_binary_input_cluster_cfg_t binary_input_cfg = {
         .out_of_service = 0,
@@ -226,9 +256,29 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_cluster_list_add_temperature_meas_cluster(esp_zb_cluster_list, esp_zb_temperature_meas_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
     esp_zb_cluster_list_add_humidity_meas_cluster(esp_zb_cluster_list, esp_zb_humidity_meas_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
+    
+    esp_zb_cluster_list_add_level_cluster(esp_zb_cluster_list, esp_zb_level_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+   // esp_zb_cluster_list_update_level_cluster(esp_zb_cluster_list, esp_zb_level_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+
+    esp_zb_cluster_list_add_color_control_cluster(esp_zb_cluster_list, esp_zb_color_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+    esp_zb_cluster_list_update_color_control_cluster(esp_zb_cluster_list, esp_zb_color_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+
+
     // ------------------------------ Create endpoint list ------------------------------
     esp_zb_ep_list_t *esp_zb_ep_list = esp_zb_ep_list_create();
-    esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_cluster_list, HA_ESP_LIGHT_ENDPOINT, ESP_ZB_AF_HA_PROFILE_ID, ESP_ZB_HA_ON_OFF_LIGHT_DEVICE_ID);
+
+    //Create struct for esp_zb_ep_list_add_ep function from newest library
+    //Warning! BitFields?!
+    esp_zb_endpoint_config_t zb_endpoint_config = {
+        .endpoint =  HA_ESP_LIGHT_ENDPOINT,                       /*!< Endpoint */
+        .app_profile_id =  ESP_ZB_AF_HA_PROFILE_ID,               /*!< Application profile identifier */
+        .app_device_id =  ESP_ZB_HA_ON_OFF_LIGHT_DEVICE_ID,       /*!< Application device identifier */
+        .app_device_version = 4,                                  /*!< Application device version */
+    };
+    //For old library
+    //esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_cluster_list, HA_ESP_LIGHT_ENDPOINT, ESP_ZB_AF_HA_PROFILE_ID, ESP_ZB_HA_ON_OFF_LIGHT_DEVICE_ID);
+
+    esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_cluster_list, zb_endpoint_config);
 
     // ------------------------------ Register Device ------------------------------
     esp_zb_device_register(esp_zb_ep_list);
@@ -253,6 +303,6 @@ void app_main(void)
 
     gpio_set_direction(GPIO_NUM_12, GPIO_MODE_INPUT);
 
-    gpio_set_direction(GPIO_NUM_0, GPIO_MODE_OUTPUT);
-    gpio_set_level(GPIO_NUM_0, 0);
+    gpio_set_direction(GPIO_NUM_5, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_5, 0);
 }

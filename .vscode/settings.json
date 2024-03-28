@@ -1,7 +1,9 @@
 {
-  "idf.portWin": "COM6",
+  "idf.portWin": "COM7",
   "idf.adapterTargetName": "esp32h2",
-  "idf.openOcdConfigs": ["board/esp32h2-ftdi.cfg"],
+  "idf.openOcdConfigs": [
+    "board/esp32h2-bridge.cfg"
+  ],
   "files.associations": {
     "*.vhd": "vhdl",
     "*.yaml": "home-assistant",
