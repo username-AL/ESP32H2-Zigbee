@@ -8,7 +8,21 @@
     "*.vhd": "vhdl",
     "*.yaml": "home-assistant",
     "esp_zb_light.h": "c",
-    "am2302_rmt.h": "c"
+    "am2302_rmt.h": "c",
+    "stdio.h": "c",
+    "ledc.h": "c",
+    "esp_err.h": "c",
+    "charconv": "c",
+    "chrono": "c",
+    "optional": "c",
+    "format": "c",
+    "ratio": "c",
+    "system_error": "c",
+    "array": "c",
+    "functional": "c",
+    "tuple": "c",
+    "type_traits": "c",
+    "utility": "c"
   },
   "idf.flashType": "UART"
 }

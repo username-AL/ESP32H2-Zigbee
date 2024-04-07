@@ -1,12 +1,11 @@
 # ESP32-H2 Demo Zigbee Device
 
-This project is a demo Zigbee device based on the ESP32-H2 / ESP32-C6
+This project is a CCT Zigbee device based on the ESP32-H2 / ESP32-C6
 
 ## Features
 
-- [x] DHT22 temperature and humidity sensor
-- [x] Binary switch
-- [x] Binary input
+- [ ] Binary switch
+- [ ] Binary input
 - [x] Custom color temperature (CCT) light
 
 ![Alt text](image.png)
