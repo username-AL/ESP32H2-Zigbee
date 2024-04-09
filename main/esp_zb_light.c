@@ -18,7 +18,7 @@ static const char *TAG = "CCT";
 #define C_CHANNEL       LEDC_CHANNEL_1
 #define PWM_MODE        LEDC_LOW_SPEED_MODE
 
-const uint16_t MAX_DUTY = 8200;//8190;
+const uint16_t MAX_DUTY = 8190;
 
 const uint16_t MIN_TEMP = 200;
 const uint16_t MAX_TEMP = 400;
@@ -26,7 +26,7 @@ const uint16_t MID_TEMP = MIN_TEMP + (MAX_TEMP - MIN_TEMP)/2;
 
 static uint16_t COLOR_TEMP = MID_TEMP;
 static uint8_t PWR = 50;
-static bool ISON = false;
+static bool ISON = true;
 
 void reportAttribute(uint8_t endpoint, uint16_t clusterID, uint16_t attributeID, void *value, uint8_t value_length)
 {
@@ -46,45 +46,72 @@ void reportAttribute(uint8_t endpoint, uint16_t clusterID, uint16_t attributeID,
     esp_zb_zcl_report_attr_cmd_req(&cmd);
 }
 
-uint16_t GetPWR_Pcnt(){
-    if(PWR >= 254) return 100;
-    return (PWR * 100) / 255;
+double GetPWR_Pcnt(){
+    if(PWR >= 254) return 100.0;
+    return (PWR * 100.0) / 255.0;
 }
 
+uint16_t GetPWM_Pcnt(bool hot_pwm){
+    uint16_t pwm = 100;
+
+    int16_t delta = COLOR_TEMP - MID_TEMP;
+
+    if(delta > 100){ delta = 100; }
+    if(delta <-100){ delta =-100; }
+
+    if(delta >= 0){
+        if(hot_pwm){ return pwm; }
+        return 100 - delta;
+    }
+    
+    if(!hot_pwm){ return pwm; }
+    return 100 + delta;
+    
+}
 
 
 void PWM_task(void *pvParameters)
 {
     static uint16_t color_temp = 0;
     static uint8_t pwr = 50;
+    int delta = 1;
     while (1)
     {
+        COLOR_TEMP += delta;
+        PWR = 100;
         if(ISON){
             if((pwr != PWR) || (color_temp != COLOR_TEMP)){
-                uint16_t pwm1_pcnt = (COLOR_TEMP >= MID_TEMP) ?  100 : 100 - (MID_TEMP - COLOR_TEMP);
-                uint16_t pwm2_pcnt = (COLOR_TEMP <  MID_TEMP) ?  100 : 100 - (COLOR_TEMP - MID_TEMP); 
+                uint16_t pwm1_pcnt = GetPWM_Pcnt(false);
+                uint16_t pwm2_pcnt = GetPWM_Pcnt(true);
                 uint16_t pwr_pcnt = GetPWR_Pcnt();
-                
-                pwr = PWR;
-                color_temp = COLOR_TEMP;
-                ESP_LOGI(TAG, "pwm1(%i), pwm2(%i), pwr(%i)", (int)pwm1_pcnt, (int)pwm2_pcnt, (int)pwr_pcnt);
-                //reportAttribute(HA_ESP_LIGHT_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_LEVEL_CONTROL, ESP_ZB_ZCL_ATTR_LEVEL_CONTROL_CURRENT_LEVEL_ID, &pwr, 1);
-                //reportAttribute(HA_ESP_LIGHT_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_COLOR_CONTROL, ESP_ZB_ZCL_ATTR_COLOR_CONTROL_COLOR_TEMPERATURE_ID, &color_temp, 2);
-                
-                //todo assert (MAX_DUTY < 2^13)
-                uint32_t d1 = (MAX_DUTY * pwm1_pcnt * pwr_pcnt) / 10000;
-                uint32_t d2 = (MAX_DUTY * pwm2_pcnt * pwr_pcnt) / 10000;
 
-                ESP_ERROR_CHECK(ledc_set_duty(PWM_MODE, H_CHANNEL, d1));
-                ESP_ERROR_CHECK(ledc_set_duty(PWM_MODE, C_CHANNEL, d2));                
+                double pwm1_mult = (pow(5, (double)pwm1_pcnt/35) - 1)/100.0;
+                double pwm2_mult = (pow(5, (double)pwm2_pcnt/35) - 1)/100.0;
+                double pwr_mult = pwr_pcnt/100.0;
+
+               // pwr = PWR;
+               // color_temp = COLOR_TEMP;
+                   
+         
+                uint32_t duty1 = MAX_DUTY * pwm1_mult * pwr_mult;
+                uint32_t duty2 = MAX_DUTY * pwm2_mult * pwr_mult;
+                // uint32_t d1 = ((uint32_t)MAX_DUTY * (uint32_t)pwm1_pcnt * (uint32_t)pwr_pcnt) / 10000;
+                // uint32_t d2 = ((uint32_t)MAX_DUTY * (uint32_t)pwm2_pcnt * (uint32_t)pwr_pcnt) / 10000;
+               
+                ESP_ERROR_CHECK(ledc_set_duty(PWM_MODE, H_CHANNEL, duty1));
+                ESP_ERROR_CHECK(ledc_set_duty(PWM_MODE, C_CHANNEL, duty2));                
                 ESP_ERROR_CHECK(ledc_update_duty(PWM_MODE, H_CHANNEL));
                 ESP_ERROR_CHECK(ledc_update_duty(PWM_MODE, C_CHANNEL));
 
-                ESP_LOGI(TAG, "d1(%i), d2(%i)", (int)d1, (int)d2);
+                //ESP_LOGI("PWM", "pwm1(%i) m(%f), pwm2(%i) m(%f), pwr(%i) m(%f)", (int)pwm1_pcnt, pwm1_mult, (int)pwm2_pcnt, pwm2_mult, (int)pwr_pcnt, pwr_mult); 
+                //ESP_LOGI("PWM", "d1(%i), d2(%i)", (int)duty1, (int)duty2);
+                ESP_LOGI("PWM", "pwm1(%i) m(%f), pwm2(%i) m(%f), pwr(%i) m(%f), d1(%i), d2(%i)", (int)pwm1_pcnt, pwm1_mult, (int)pwm2_pcnt, pwm2_mult, (int)pwr_pcnt, pwr_mult, (int)duty1, (int)duty2); 
             }
 
         }
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+        if((COLOR_TEMP >= 400) || (COLOR_TEMP <= 200)){delta = delta * (-1);}
+        
     }
 }
 
@@ -315,6 +342,8 @@ static void esp_zb_task(void *pvParameters)
 }
 
 void ConfigGPIOs(){
+    gpio_reset_pin(C_LED_IO);
+    gpio_reset_pin(H_LED_IO);
     gpio_set_direction(C_LED_IO, GPIO_MODE_OUTPUT);
     gpio_set_direction(H_LED_IO, GPIO_MODE_OUTPUT);
     
