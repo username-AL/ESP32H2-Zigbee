@@ -1,4 +1,5 @@
 #include "nvs_flash.h"
+
 #include "esp_check.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -46,6 +47,24 @@ void reportAttribute(uint8_t endpoint, uint16_t clusterID, uint16_t attributeID,
     esp_zb_zcl_report_attr_cmd_req(&cmd);
 }
 
+void SaveToNVS(){
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    err = nvs_set_i32(my_handle, "saved_color", (int32_t) COLOR_TEMP);
+    switch (err) {
+        case ESP_OK: ESP_LOGI("SAVE", "Saved color temperature value: %i", (int)COLOR_TEMP); break;       
+        default :    ESP_LOGW("SAVE", "Saving error!!!");
+    }
+
+    int32_t pwr_toSave = (PWR >= 100) ? pwr_toSave = (int32_t)PWR : 100;    
+    err = nvs_set_i32(my_handle, "saved_pwr", pwr_toSave);
+    switch (err) {
+        case ESP_OK: ESP_LOGI("SAVE", "Saved pwr value: %i", (int)pwr_toSave); break;       
+        default :    ESP_LOGW("SAVE", "Saving error!!!");
+    }
+}
+
+
 double GetPWR_Pcnt(){
     if(PWR >= 254) return 100.0;
     return (PWR * 100.0) / 255.0;
@@ -66,21 +85,23 @@ uint16_t GetPWM_Pcnt(bool hot_pwm){
     
     if(!hot_pwm){ return pwm; }
     return 100 + delta;
-    
+
 }
 
 
 void PWM_task(void *pvParameters)
 {
-    static uint16_t color_temp = 0;
-    static uint8_t pwr = 50;
-    int delta = 1;
+    uint16_t color_temp = 0;
+    uint8_t pwr = 50;
+    uint16_t cycles_without_changes = 0;
+    bool saved = false;
     while (1)
-    {
-        COLOR_TEMP += delta;
-        PWR = 100;
+    {        
         if(ISON){
             if((pwr != PWR) || (color_temp != COLOR_TEMP)){
+                cycles_without_changes = 0;
+                saved = false;
+
                 uint16_t pwm1_pcnt = GetPWM_Pcnt(false);
                 uint16_t pwm2_pcnt = GetPWM_Pcnt(true);
                 uint16_t pwr_pcnt = GetPWR_Pcnt();
@@ -89,14 +110,8 @@ void PWM_task(void *pvParameters)
                 double pwm2_mult = (pow(5, (double)pwm2_pcnt/35) - 1)/100.0;
                 double pwr_mult = pwr_pcnt/100.0;
 
-               // pwr = PWR;
-               // color_temp = COLOR_TEMP;
-                   
-         
                 uint32_t duty1 = MAX_DUTY * pwm1_mult * pwr_mult;
                 uint32_t duty2 = MAX_DUTY * pwm2_mult * pwr_mult;
-                // uint32_t d1 = ((uint32_t)MAX_DUTY * (uint32_t)pwm1_pcnt * (uint32_t)pwr_pcnt) / 10000;
-                // uint32_t d2 = ((uint32_t)MAX_DUTY * (uint32_t)pwm2_pcnt * (uint32_t)pwr_pcnt) / 10000;
                
                 ESP_ERROR_CHECK(ledc_set_duty(PWM_MODE, H_CHANNEL, duty1));
                 ESP_ERROR_CHECK(ledc_set_duty(PWM_MODE, C_CHANNEL, duty2));                
@@ -105,13 +120,15 @@ void PWM_task(void *pvParameters)
 
                 //ESP_LOGI("PWM", "pwm1(%i) m(%f), pwm2(%i) m(%f), pwr(%i) m(%f)", (int)pwm1_pcnt, pwm1_mult, (int)pwm2_pcnt, pwm2_mult, (int)pwr_pcnt, pwr_mult); 
                 //ESP_LOGI("PWM", "d1(%i), d2(%i)", (int)duty1, (int)duty2);
+                pwr = PWR;
+                color_temp = COLOR_TEMP; 
                 ESP_LOGI("PWM", "pwm1(%i) m(%f), pwm2(%i) m(%f), pwr(%i) m(%f), d1(%i), d2(%i)", (int)pwm1_pcnt, pwm1_mult, (int)pwm2_pcnt, pwm2_mult, (int)pwr_pcnt, pwr_mult, (int)duty1, (int)duty2); 
             }
+            else{ cycles_without_changes++;  }
 
+            if((cycles_without_changes >= 50) && (!saved)){ SaveToNVS(); saved = true; }
         }
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-        if((COLOR_TEMP >= 400) || (COLOR_TEMP <= 200)){delta = delta * (-1);}
-        
+        vTaskDelay(100 / portTICK_PERIOD_MS);    
     }
 }
 
@@ -389,6 +406,49 @@ void ConfigPWM(){
     ESP_ERROR_CHECK(ledc_channel_config(&C_channel));
 }
 
+
+void AntiZB_task(void *pvParameters){
+    int delta = 1;
+    int counter = 0;
+    while (true)
+    {
+        if(counter < 11){
+            COLOR_TEMP += delta;
+
+            if((COLOR_TEMP >= 400) || (COLOR_TEMP <= 200)){ delta = delta * (-1); }
+            counter++;
+        }
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+}
+
+void LoadVals(){
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    
+    int32_t saved_color = MID_TEMP; 
+    err = nvs_get_i32(my_handle, "saved_color", &saved_color);
+
+    switch (err) {
+        case ESP_OK:                    ESP_LOGI("LOAD", "Found color temperature value: %i", (int)saved_color); break;
+        case ESP_ERR_NVS_NOT_FOUND:     ESP_LOGW("LOAD", "Color temperature value is not found. Default color temperature value (%i) used", (int)MID_TEMP); break;
+        default :                       ESP_LOGW("LOAD", "Reading error!!! Default color temperature value (%i) used", (int)MID_TEMP);
+    }
+
+    COLOR_TEMP = saved_color;
+
+    int32_t saved_pwr = PWR; 
+    err = nvs_get_i32(my_handle, "saved_pwr", &saved_pwr);
+
+    switch (err) {
+        case ESP_OK:                    ESP_LOGI("LOAD", "Found pwr value: %i", (int)saved_pwr); break;
+        case ESP_ERR_NVS_NOT_FOUND:     ESP_LOGW("LOAD", "Pwr value is not found. Default pwr value (%i) used", (int)PWR); break;
+        default :                       ESP_LOGW("LOAD", "Reading error!!! Default pwr  value (%i) used", (int)PWR);
+    }
+
+    PWR = saved_pwr;
+}
+
 void app_main(void)
 {
     esp_zb_platform_config_t config = {
@@ -398,11 +458,13 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
 
-
+    LoadVals();
     ConfigPWM();
+
     
-    xTaskCreate(PWM_task, "dht22_task", 4096, NULL, 5, NULL);
+    xTaskCreate(PWM_task, "PWM_task", 4096, NULL, 5, NULL);
     xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
 
-    
+    xTaskCreate(AntiZB_task, "AntiZB_task", 4096, NULL, 5, NULL);
+
 }
